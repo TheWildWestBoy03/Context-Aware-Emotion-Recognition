@@ -1,13 +1,18 @@
-from data_preprocessing import Preprocessor
+from data_preprocessing import Preprocessor, ensure_meld_csvs
 from dataset import MELDDataset
+from evaluation import (
+    LABEL2ID,
+    History,
+    compute_metrics,
+    evaluate,
+    format_metrics,
+    report,
+    save_evaluation,
+)
 from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
-import torch.nn as nn
-import torch
+import random
 import nltk
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.metrics import classification_report
-
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -212,73 +217,45 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         all_predictions.extend(predictions[mask].cpu().tolist())
         all_targets.extend(y[mask].cpu().tolist())
 
-    avg_loss = total_loss / total_utterances
-    accuracy = accuracy_score(all_targets, all_predictions)
-    macro_f1 = f1_score(
-        all_targets, all_predictions, average="macro", zero_division=0
-    )
-    weighted_f1 = f1_score(
-        all_targets, all_predictions, average="weighted", zero_division=0
-    )
+    return {
+        "loss": total_loss / total_utterances,
+        **compute_metrics(all_targets, all_predictions),
+    }
 
-    return avg_loss, accuracy, macro_f1, weighted_f1
 
-@torch.no_grad()
-def evaluate(model, loader, criterion, device):
-    model.eval()
-
-    total_loss = 0.0
-    total_utterances = 0
-    all_predictions = []
-    all_targets = []
-
-    for X, y, mask in loader:
-        X = X.to(device)
-        y = y.to(device)
-        mask = mask.to(device)
-
-        logits = model(X, mask)
-
-        loss = criterion(logits[mask], y[mask])
-        num_utterances = mask.sum().item()
-
-        total_loss += loss.item() * num_utterances
-        total_utterances += num_utterances
-
-        predictions = logits.argmax(dim=-1)
-
-        all_predictions.extend(predictions[mask].cpu().tolist())
-        all_targets.extend(y[mask].cpu().tolist())
-
-    avg_loss = total_loss / total_utterances
-    accuracy = accuracy_score(all_targets, all_predictions)
-    macro_f1 = f1_score(
-        all_targets, all_predictions, average="macro", zero_division=0
-    )
-    weighted_f1 = f1_score(
-        all_targets, all_predictions, average="weighted", zero_division=0
-    )
-
-    return avg_loss, accuracy, macro_f1, weighted_f1
-    
 def download_packages():
     nltk.download('punkt_tab')
     nltk.download('punkt')
     nltk.download('wordnet')
     nltk.download('omw-1.4')
 
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def compute_class_weights(dataset, num_classes):
+    """Inverse-frequency weights: total / (num_classes * count_c), from training labels only."""
+    counts = np.bincount(
+        [label for dialogue in dataset.dialogues for label in dialogue["labels"]],
+        minlength=num_classes,
+    )
+    weights = counts.sum() / (num_classes * np.maximum(counts, 1))
+    return torch.tensor(weights, dtype=torch.float)
+
+
 def main():
-    # read the dataframe into RAM memory for now, given its low dimensions
+    # Reproducible runs (data shuffling, weight init, dropout)
+    set_seed(42)
+
+    # Official MELD splits: train for fitting, dev for model selection, test for final report
+    meld_paths = ensure_meld_csvs()
 
     preprocessor = Preprocessor()
-    df = preprocessor.start_pipeline()
-
-    # Split complete dialogues
-    train_df, val_df = train_test_split(
-        df,
-        test_size=0.2,
-        random_state=42
-    )
+    train_df = preprocessor.start_pipeline(meld_paths["train"])
+    val_df = preprocessor.start_pipeline(meld_paths["dev"])
+    test_df = preprocessor.start_pipeline(meld_paths["test"])
 
     print("\nTraining emotion distribution:")
     print(train_df["dialogue"].apply(
@@ -296,16 +273,8 @@ def main():
     # Build vocabulary ONLY from training dialogues
     preprocessor.build_vocab(train_df)
 
-    # Fixed MELD emotion mapping
-    label2id = {
-        "anger": 0,
-        "disgust": 1,
-        "fear": 2,
-        "joy": 3,
-        "neutral": 4,
-        "sadness": 5,
-        "surprise": 6
-    }
+    # Fixed MELD emotion mapping (shared with evaluation.py)
+    label2id = LABEL2ID
 
     train_dataset = MELDDataset(
         train_df,
@@ -319,6 +288,12 @@ def main():
         label2id
     )
 
+    test_dataset = MELDDataset(
+        test_df,
+        preprocessor.vocab,
+        label2id
+    )
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=32,
@@ -328,6 +303,13 @@ def main():
 
     val_loader = DataLoader(
         val_dataset,
+        batch_size=32,
+        shuffle=False,
+        collate_fn=MELDDataset.collate_fn
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
         batch_size=32,
         shuffle=False,
         collate_fn=MELDDataset.collate_fn
@@ -366,7 +348,12 @@ def main():
     print("Logits:", logits.shape)
 
     # Loss and optimizer
-    criterion = nn.CrossEntropyLoss()
+    # Class-weighted loss so rare emotions (disgust, fear) are not drowned out by neutral
+    class_weights = compute_class_weights(train_dataset, len(label2id))
+    print("Class weights:", {
+        label: round(class_weights[idx].item(), 3) for label, idx in label2id.items()
+    })
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 
     optimizer = torch.optim.Adam(
         network.parameters(),
@@ -374,91 +361,56 @@ def main():
     )
 
     # Training configuration
-    num_epochs = 20
+    num_epochs = 30          # upper bound; early stopping usually ends sooner
+    patience = 3             # epochs without dev macro F1 improvement before stopping
     best_val_f1 = -1.0
+    epochs_without_improvement = 0
+    history = History()
 
     for epoch in range(num_epochs):
-
-        train_loss, train_acc, train_f1, train_weighted_f1 = train_one_epoch(
+        train_metrics = train_one_epoch(
             network,
             train_loader,
             optimizer,
             criterion,
             device
         )
-
-        val_loss, val_acc, val_f1, val_weighted_f1 = evaluate(
+        val_metrics = evaluate(
             network,
             val_loader,
             criterion,
             device
         )
+        history.add("train", train_metrics)
+        history.add("val", val_metrics)
 
         print(f"\nEpoch [{epoch + 1}/{num_epochs}]")
-
-        print(
-            f"Train | Loss: {train_loss:.4f} | "
-            f"Accuracy: {train_acc:.4f} | "
-            f"Macro F1: {train_f1:.4f}"
-        )
-
-        print(
-            f"Val   | Loss: {val_loss:.4f} | "
-            f"Accuracy: {val_acc:.4f} | "
-            f"Macro F1: {val_f1:.4f}"
-        )
+        print(format_metrics("Train", train_metrics))
+        print(format_metrics("Val", val_metrics))
 
         # Save the model with the best validation macro F1
-        if val_f1 > best_val_f1:
-            best_val_f1 = val_f1
+        if val_metrics["macro_f1"] > best_val_f1:
+            best_val_f1 = val_metrics["macro_f1"]
+            epochs_without_improvement = 0
+            torch.save(network.state_dict(), "best_textcnn.pth")
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= patience:
+                print(f"\nEarly stopping at epoch {epoch + 1} "
+                      f"(no dev macro F1 improvement for {patience} epochs)")
+                break
 
-            torch.save(
-                network.state_dict(),
-                "best_textcnn.pth"
-            )
+    print(f"\nBest validation Macro F1: {best_val_f1:.4f} (epoch {history.best_epoch()})")
 
-    print(f"\nBest validation Macro F1: {best_val_f1:.4f}")
-
-    # Load the best saved model
+    # Final evaluation of the best checkpoint on the official test split
     network.load_state_dict(
         torch.load("best_textcnn.pth", map_location=device)
     )
-    network.eval()
+    test_metrics = evaluate(network, test_loader, criterion, device)
+    report("Test", test_metrics)
 
-    # Collect validation predictions
-    all_targets = []
-    all_predictions = []
+    save_evaluation(history, test_metrics, out_dir="plots")
 
-    with torch.no_grad():
-        for X, y, mask in val_loader:
-            X = X.to(device)
-            y = y.to(device)
-            mask = mask.to(device)
-
-            logits = network(X, mask)
-            predictions = logits.argmax(dim=-1)
-
-            all_predictions.extend(predictions[mask].cpu().tolist())
-            all_targets.extend(y[mask].cpu().tolist())
-
-    # Print classification report
-    print("\nValidation Classification Report:")
-    print(classification_report(
-        all_targets,
-        all_predictions,
-        labels=list(range(7)),
-        target_names=[
-            "anger",
-            "disgust",
-            "fear",
-            "joy",
-            "neutral",
-            "sadness",
-            "surprise"
-        ],
-        zero_division=0
-    ))
-    
 
 if __name__ == "__main__":
     main()

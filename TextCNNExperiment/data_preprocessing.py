@@ -1,3 +1,5 @@
+import os
+import urllib.request
 import pandas as pd
 import numpy as np
 import re
@@ -7,6 +9,44 @@ from collections import Counter
 
 pd.set_option('display.max_colwidth', None)
 PATH = "./meld_full_13708_utterances.xlsx"
+
+# Directory holding the official MELD CSVs (train/dev/test_sent_emo.csv)
+MELD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "MELD.Raw")
+
+MELD_RAW_URLS = {
+    "train": "https://raw.githubusercontent.com/declare-lab/MELD/master/data/MELD/train_sent_emo.csv",
+    "dev": "https://raw.githubusercontent.com/declare-lab/MELD/master/data/MELD/dev_sent_emo.csv",
+    "test": "https://raw.githubusercontent.com/declare-lab/MELD/master/data/MELD/test_sent_emo.csv",
+}
+
+# MELD CSV column names -> names used by this pipeline
+MELD_COLUMNS = {
+    "Dialogue_ID": "dialogue_id",
+    "Utterance_ID": "utterance_id",
+    "Speaker": "speaker",
+    "Utterance": "utterance",
+    "Emotion": "emotion",
+}
+
+# Leftover Windows-1252 punctuation in the MELD CSVs (e.g. \x92 instead of ')
+CP1252_FIX = str.maketrans({
+    "\x91": "'", "\x92": "'", "‘": "'", "’": "'",
+    "\x93": '"', "\x94": '"', "“": '"', "”": '"',
+    "\x85": " ", "\x96": " ", "\x97": " ", "\xa0": " ",
+})
+
+
+def ensure_meld_csvs(data_dir=MELD_DIR):
+    """Return paths to the train/dev/test MELD CSVs, downloading any that are missing."""
+    os.makedirs(data_dir, exist_ok=True)
+    paths = {}
+    for split, url in MELD_RAW_URLS.items():
+        path = os.path.join(data_dir, f"{split}_sent_emo.csv")
+        if not os.path.exists(path):
+            print(f"Downloading MELD {split} split to {path}...")
+            urllib.request.urlretrieve(url, path)
+        paths[split] = path
+    return paths
 
 class Preprocessor:
     def __init__(self):
@@ -61,7 +101,7 @@ class Preprocessor:
             lambda dialogue: [
                 {
                     **item,
-                    "utterance": item["utterance"].lower()
+                    "utterance": item["utterance"].translate(CP1252_FIX).lower()
                 }
                 for item in dialogue
             ]
@@ -88,8 +128,15 @@ class Preprocessor:
             ]
         )
 
-    def read_data(self):
-        self.dataframe = pd.read_excel(PATH, sheet_name="meld_full_13708_utterances")
+    @staticmethod
+    def _load_raw(path):
+        if path.endswith(".csv"):
+            df = pd.read_csv(path, encoding="utf-8")
+            return df.rename(columns=MELD_COLUMNS)[list(MELD_COLUMNS.values())]
+        return pd.read_excel(path, sheet_name="meld_full_13708_utterances")
+
+    def read_data(self, path=PATH):
+        self.dataframe = self._load_raw(path)
         self.dataframe.sort_values(
             ["dialogue_id", "utterance_id"],
             inplace=True
@@ -130,8 +177,8 @@ class Preprocessor:
                 ]
             )
 
-    def start_pipeline(self):
-        self.read_data()
+    def start_pipeline(self, path=PATH):
+        self.read_data(path)
         print(self.dataframe.head())
         self.clean()
         self.preprocess()
