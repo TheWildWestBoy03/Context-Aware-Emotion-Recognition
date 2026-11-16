@@ -12,3 +12,9 @@ gemini-*
 job_*
 
 *.sif
+
+.venv/
+# TextCNN run outputs (curated copies live in TextCNNExperiment/results/)
+TextCNNExperiment/plots/
+TextCNNExperiment/plots_*/
+TextCNNExperiment/best_textcnn_*.pth
