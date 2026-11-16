@@ -18,7 +18,7 @@ from sklearn.metrics import (
 )
 from torch.utils.data import DataLoader
 
-from dataset import (
+from proiect.biltsm.dataset import (
     EMOTION_LABELS,
     PAD_IDX,
     MELDSequenceDataset,
@@ -29,7 +29,7 @@ from dataset import (
     load_glove_embeddings,
     load_meld_split,
 )
-from model import BiLSTMClassifier
+from proiect.biltsm.model import BiLSTMClassifier
 
 
 def set_seed(seed: int = 42) -> None:

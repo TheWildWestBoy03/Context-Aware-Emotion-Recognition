@@ -1,0 +1,48 @@
+Running on device: cuda
+Loaded MELD | Train: 9989, Dev: 1109, Test: 2610 | Vocab size: 5578
+Loading pretrained embeddings via gensim (glove-wiki-gigaword-300)...
+Matched 5144/5578 vocabulary tokens in GloVe.
+Epoch 01/25 | Train Loss: 1.6518 | Val Loss: 1.6003 | Val Macro-F1: 0.3107 | Val Weighted-F1: 0.4881
+Epoch 02/25 | Train Loss: 1.5022 | Val Loss: 1.5608 | Val Macro-F1: 0.3357 | Val Weighted-F1: 0.5218
+Epoch 03/25 | Train Loss: 1.3916 | Val Loss: 1.6115 | Val Macro-F1: 0.3590 | Val Weighted-F1: 0.5302
+Epoch 04/25 | Train Loss: 1.2849 | Val Loss: 1.6494 | Val Macro-F1: 0.3674 | Val Weighted-F1: 0.5258
+Epoch 05/25 | Train Loss: 1.1873 | Val Loss: 1.6409 | Val Macro-F1: 0.3636 | Val Weighted-F1: 0.5150
+Epoch 06/25 | Train Loss: 1.0697 | Val Loss: 1.7076 | Val Macro-F1: 0.3605 | Val Weighted-F1: 0.5199
+Epoch 07/25 | Train Loss: 0.9734 | Val Loss: 1.7608 | Val Macro-F1: 0.3523 | Val Weighted-F1: 0.5092
+Epoch 08/25 | Train Loss: 0.8712 | Val Loss: 1.9051 | Val Macro-F1: 0.3523 | Val Weighted-F1: 0.4994
+Epoch 09/25 | Train Loss: 0.7923 | Val Loss: 1.9973 | Val Macro-F1: 0.3504 | Val Weighted-F1: 0.5043
+Early stopping at epoch 9 (best Val Macro-F1: 0.3674).
+
+=== BiLSTM Test Set Results (MELD) ===
+Macro-F1:    0.3843
+Weighted-F1: 0.5714
+
+Per-Class Classification Report:
+              precision    recall  f1-score   support
+
+     neutral     0.7113    0.7946    0.7507      1256
+    surprise     0.5945    0.4591    0.5181       281
+        fear     0.1136    0.1000    0.1064        50
+     sadness     0.3184    0.3077    0.3130       208
+         joy     0.4708    0.6219    0.5359       402
+     disgust     0.2424    0.1176    0.1584        68
+       anger     0.4475    0.2348    0.3080       345
+
+    accuracy                         0.5881      2610
+   macro avg     0.4141    0.3765    0.3843      2610
+weighted avg     0.5719    0.5881    0.5714      2610
+
+Confusion Matrix (rows = true, cols = predicted):
+           neutral  surpris     fear  sadness      joy  disgust    anger
+neutral        998       32       17       76      106        7       20
+surprise        73      129        2        3       41        3       30
+fear            21        3        5        7        7        2        5
+sadness         87        8        9       64       29        2        9
+joy             94       12        4       16      250        1       25
+disgust         34        4        1        5        5        8       11
+anger           96       29        6       30       93       10       81
+
+Saved evaluation plots to 'plots/':
+  - plots/training_curves.png
+  - plots/per_class_metrics.png
+  - plots/confusion_matrix.png
