@@ -1,3 +1,5 @@
+*.xlsx
+*.tar.gz
 *.pdf
 *.raw
 *.gz
