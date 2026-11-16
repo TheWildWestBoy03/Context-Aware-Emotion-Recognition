@@ -3,7 +3,9 @@ import numpy as np
 import re
 from nltk.tokenize import word_tokenize, RegexpTokenizer
 import nltk
+from collections import Counter
 
+pd.set_option('display.max_colwidth', None)
 PATH = "./meld_full_13708_utterances.xlsx"
 
 class Preprocessor:
@@ -15,8 +17,44 @@ class Preprocessor:
         self.tokens = []
         self.tokenizer = RegexpTokenizer(r"[a-z]+(?:'[a-z]+)*")
 
-    def embed_text():
-        pass
+        self.vocab = {
+            "<PAD>": 0,
+            "<UNK>": 1
+        }
+
+    def build_vocab(self, dataframe, min_freq=1):
+        counter = Counter()
+
+        for dialogue in dataframe["dialogue"]:
+            for item in dialogue:
+                counter.update(item["tokens"])
+
+        sorted_tokens = sorted(
+            token
+            for token, frequency in counter.items()
+            if frequency >= min_freq
+        )
+
+        self.vocab = {
+            "<PAD>": 0,
+            "<UNK>": 1
+        }
+
+        for token in sorted_tokens:
+            self.vocab[token] = len(self.vocab)
+
+
+    def build_label_mapping(self, dataframe):
+        labels = sorted({
+            item["emotion"]
+            for dialogue in dataframe["dialogue"]
+            for item in dialogue
+        })
+
+        self.label2id = {
+            label: idx
+            for idx, label in enumerate(labels)
+        }
 
     def clean(self):
         self.dataframe["dialogue"] = self.dataframe["dialogue"].apply(
@@ -78,25 +116,24 @@ class Preprocessor:
 
         self.dataframe = self.dataframe[['dialogue_id', 'dialogue']]
 
+    def encode_dialogues(self):
+            self.dataframe["dialogue"] = self.dataframe["dialogue"].apply(
+                lambda dialogue: [
+                    {
+                        **item,
+                        "input_ids": [
+                            self.vocab.get(token, self.vocab["<UNK>"])
+                            for token in item["tokens"]
+                        ]
+                    }
+                    for item in dialogue
+                ]
+            )
+
     def start_pipeline(self):
         self.read_data()
+        print(self.dataframe.head())
         self.clean()
         self.preprocess()
 
-        print(self.dataframe['dialogue'][0])
-
-
-def main():
-    # read the dataframe into RAM memory for now, given its low dimensions
-
-    preprocessor = Preprocessor()
-    # nltk.download('punkt_tab')
-    # nltk.download('punkt')
-    # nltk.download('wordnet')
-    # nltk.download('omw-1.4')
-
-    preprocessor.start_pipeline()
-    pass
-
-if __name__ == "__main__":
-    main()
+        return self.dataframe
