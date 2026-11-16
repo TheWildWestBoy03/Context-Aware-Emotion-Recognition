@@ -1,21 +1,24 @@
-*.xlsx
-*.tar.gz
+# Documents and archives
 *.pdf
 *.raw
 *.gz
 
-__pycache__
-data/*
+# Python cache
+__pycache__/
+*.py[cod]
 
+# Dataset directory (MELD CSVs)[cite: 1, 21]
+data/
+
+# Gemini exports / scratch files
 gemini-*
 
+# SLURM job logs (job_output_*.txt, job_error_*.txt, slurm-*.out)[cite: 36]
 job_*
+slurm-*.out
 
+# Singularity / Apptainer container images[cite: 36]
 *.sif
 
-.venv/
-# TextCNN run outputs (curated copies live in TextCNNExperiment/results/)
-TextCNNExperiment/plots/
-TextCNNExperiment/plots_*/
-TextCNNExperiment/best_textcnn_*.pth
-DistilBERTExperiment/results/*/best_model.pt
+# Trained PyTorch model checkpoints (e.g., best_bilstm_meld.pt)[cite: 34]
+*.pt
