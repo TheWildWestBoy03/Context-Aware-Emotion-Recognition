@@ -1,0 +1,45 @@
+{
+  "run": "ctx1_no_speakers",
+  "config": {
+    "context_size": 1,
+    "speakers": false,
+    "model_name": "distilbert-base-uncased",
+    "max_length": 256,
+    "epochs": 5,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "dropout": 0.2,
+    "class_weighting": "sqrt",
+    "evals_per_epoch": 2,
+    "patience": 3,
+    "seed": 42,
+    "limit_dialogues": null,
+    "save_model": false,
+    "device": "mps",
+    "minutes": 4.1
+  },
+  "best_epoch": 5.0,
+  "dev": {
+    "loss": 1.4134611083753912,
+    "accuracy": 0.6005410279531109,
+    "macro_f1": 0.45932572691911056,
+    "weighted_f1": 0.5923640830674474
+  },
+  "test": {
+    "loss": 1.3782559419500418,
+    "accuracy": 0.6134099616858237,
+    "macro_f1": 0.4391151022840818,
+    "weighted_f1": 0.612429491864584
+  },
+  "test_per_class_f1": {
+    "anger": 0.4371,
+    "disgust": 0.2742,
+    "fear": 0.125,
+    "joy": 0.5718,
+    "neutral": 0.7685,
+    "sadness": 0.335,
+    "surprise": 0.5622
+  }
+}

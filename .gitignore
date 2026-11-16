@@ -18,3 +18,4 @@ job_*
 TextCNNExperiment/plots/
 TextCNNExperiment/plots_*/
 TextCNNExperiment/best_textcnn_*.pth
+DistilBERTExperiment/results/*/best_model.pt
