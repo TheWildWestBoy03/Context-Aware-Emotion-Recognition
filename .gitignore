@@ -1,2 +1,14 @@
 *.xlsx
 *.tar.gz
+*.pdf
+*.raw
+*.gz
+
+__pycache__
+data/*
+
+gemini-*
+
+job_*
+
+*.sif
